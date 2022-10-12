@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-import arcpy
+import arcpy, os
 from arcpy.sa import Raster
 
 class Toolbox(object):
@@ -66,7 +66,6 @@ class Calculate_NDVI(object):
         OUT_DIR = parameters[2].valueAsText
         if OUT_DIR is None:
             arcpy.env.workspace = "memory"
-            memory = arcpy.CreateUniqueName("NDVI")
-            OUT_DIR = memory
+            OUT_DIR = arcpy.CreateUniqueName("NDVI.tif")
         NDVI.save(OUT_DIR)
         return
