@@ -5,6 +5,16 @@ Created on Sun Jan 15 10:05:42 2023
 @author: Manuel
 
 Edit missing iNaturalist observation accuracies in batch edit mode.
+- Replace "mrpopp" with your username in line 76.
+- Run the script to view the first batch edit URLs.
+- Make sure you are logged-in to iNaturalist and enter the URL in your browser.
+- On the website:
+    - Expand "Batch Operations"
+    - Enter a reasonable value in the "Acc (m)" field
+    - Click on "Apply"
+    - At the bottom of the page, click on "Save all"
+- Come back and hit ENTER to generate the next URL.
+- Repeat until the script has finished.
 
 Requirements: pandas, pyinaturalist, pyperclip (optional, copy to clipboard
 automatically)
