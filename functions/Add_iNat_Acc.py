@@ -42,7 +42,7 @@ class iNatEntries():
         self.ids = [obs["id"] for obs in observations]
 
 # Function to print out batch edit URLs
-def generate_urls(file_path = None, id_obj = None, N = 50):
+def generate_urls(id_obj = None, file_path = None, N = 50):
     installed = [pkg.key for pkg in pkg_resources.working_set]
     if "pyperclip" in installed:
         import pyperclip
