@@ -53,7 +53,7 @@ class iNatEntries():
             import pyperclip
             def paste_cb(url):
                 pyperclip.copy(url)
-                print("\n(Url copied to clipboard.)")
+                print("\n(URL copied to clipboard.)")
         else:
             def paste_cb(url):
                 pass
@@ -62,22 +62,33 @@ class iNatEntries():
         n_rows = len(ids)
         base_url = "https://www.inaturalist.org/observations/edit/batch?o="
         row = 0
+        print("Hint: Cancel and adjust parameter 'N' to edit more " + \
+              "observations at a time. Try a smaller value in case " + \
+                  "of issues concerning the batch update.")
         while row < n_rows:
             end = row + N if row + N < n_rows else n_rows
             iNatIDs = ",".join(str(e) for e in ids[row:end])
             url = base_url
             batch_edit_url = url + iNatIDs
-            print("Visit the following URL:\n\n" + batch_edit_url)
+            mssg0 = "\n\nOutput for observations {0} to {1} (total: {2}). " + \
+                "Visit the following URL to batch-edit:\n\n{3}"
+            print(mssg0.format((row + 1), end, n_rows, batch_edit_url))
             row += N
             paste_cb(batch_edit_url)
-            input("Press Enter to continue...")
-        print("Finished.")
+            if row < n_rows:
+                mssg1 = "Press ENTER to continue or enter 'c' to cancel. "
+                user_in = input(mssg1)
+                if user_in.lower() == "c":
+                    print("Process cancelled.")
+                    break
+            else:
+                print("Finished.")
 
 # Create instance of the class defined above for your user ID
 idobj = iNatEntries(uid = "mrpopp")
 
 # Print out URLs (if module pyperclip available, URLs are copied to clipboard)
-idobj.generate_urls()
+idobj.generate_urls(N = 15)
 
 '''
 # Function to print out batch edit URLs from either an iNatEntries instance or
