@@ -5,6 +5,9 @@ Created on Sun Jan 15 10:05:42 2023
 @author: Manuel
 
 Edit missing iNaturalist observation accuracies in batch edit mode.
+
+Requirements: pandas, pyinaturalist, pyperclip (optional, copy to clipboard
+automatically)
 """
 import pandas as pd
 import pyinaturalist
