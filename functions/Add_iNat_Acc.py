@@ -5,7 +5,7 @@ Created on Sun Jan 15 10:05:42 2023
 @author: Manuel
 
 Edit missing iNaturalist observation accuracies in batch edit mode.
-- Replace "mrpopp" with your username in line 76.
+- Replace "mrpopp" with your username in line 88.
 - Run the script to view the first batch edit URLs.
 - Make sure you are logged-in to iNaturalist and enter the URL in your browser.
 - On the website:
