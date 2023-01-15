@@ -26,6 +26,7 @@ import pkg_resources
 # Class iNatEntries to obtain entries w/ missing accuracy for a given user ID
 class iNatEntries():
     def __init__(self, uid):
+        self.uid = uid
         observations = []
         page_results = [0]
         p = 1
@@ -40,15 +41,57 @@ class iNatEntries():
                 observations += page_results
                 p += 1
         self.ids = [obs["id"] for obs in observations]
+    
+    # Re-initialise to update the observation ID list
+    def refresh(self):
+        self.__init__(uid = self.uid)
+    
+    # Generate URLs
+    def generate_urls(self, N = 50):
+        installed = [pkg.key for pkg in pkg_resources.working_set]
+        if "pyperclip" in installed:
+            import pyperclip
+            def paste_cb(url):
+                pyperclip.copy(url)
+                print("\n(Url copied to clipboard.)")
+        else:
+            def paste_cb(url):
+                pass
+        
+        ids = self.ids
+        n_rows = len(ids)
+        base_url = "https://www.inaturalist.org/observations/edit/batch?o="
+        row = 0
+        while row < n_rows:
+            end = row + N if row + N < n_rows else n_rows
+            iNatIDs = ",".join(str(e) for e in ids[row:end])
+            url = base_url
+            batch_edit_url = url + iNatIDs
+            print("Visit the following URL:\n\n" + batch_edit_url)
+            row += N
+            paste_cb(batch_edit_url)
+            input("Press Enter to continue...")
+        print("Finished.")
 
-# Function to print out batch edit URLs
+# Create instance of the class defined above for your user ID
+idobj = iNatEntries(uid = "mrpopp")
+
+# Print out URLs (if module pyperclip available, URLs are copied to clipboard)
+idobj.generate_urls()
+
+'''
+# Function to print out batch edit URLs from either an iNatEntries instance or
+# an exported .csv file containing observation IDs.
+# This is an alternative to the .generate_urls() method of the above class.
+# It also accepts a iNaturalist-exported .csv file or a list containing obser-
+# vation IDs
 def generate_urls(id_obj = None, file_path = None, N = 50):
     installed = [pkg.key for pkg in pkg_resources.working_set]
     if "pyperclip" in installed:
         import pyperclip
         def paste_cb(url):
             pyperclip.copy(url)
-            print("Url copied to clipboard.")
+            print("\n(Url copied to clipboard.)")
     else:
         def paste_cb(url):
             pass
@@ -67,13 +110,9 @@ def generate_urls(id_obj = None, file_path = None, N = 50):
         iNatIDs = ",".join(str(e) for e in ids[row:end])
         url = base_url
         batch_edit_url = url + iNatIDs
-        print(batch_edit_url)
+        print("Visit the following URL:\n\n" + batch_edit_url)
         row += N
         paste_cb(batch_edit_url)
         input("Press Enter to continue...")
-
-# Create instance of the class defined above for your user ID
-idobj = iNatEntries(uid = "mrpopp")
-
-# Print out URLs (if module pyperclip available, URLs are copied to clipboard)
-generate_urls(id_obj = idobj)
+    print("Finished.")
+'''
