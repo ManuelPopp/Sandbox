@@ -17,7 +17,7 @@ class iNatEntries():
         page_results = [0]
         p = 1
         pp = 30
-
+        print("Gathering observations... this might take a moment.")
         while len(page_results) > 0:
                 page = pyinaturalist.get_observations(user_id = uid,
                                                       acc  = False,
