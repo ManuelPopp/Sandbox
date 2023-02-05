@@ -108,6 +108,7 @@ def plot_metrics(vals, ylabel, objective, xticks, plt_dir = None):
             outfile = os.path.join(plt_dir, ylabel + ".pdf") if os.path. \
                 isdir(plt_dir) else plt_dir
             plt.savefig(outfile)
+            plt.close()
         else:
             plt.show()
 
@@ -289,6 +290,7 @@ with plt.style.context("ggplot"):
     if save_fig:
         outfile = os.path.join(out, "Spectrum.pdf")
         plt.savefig(outfile)
+        plt.close()
     else:
         plt.show()
 
@@ -302,6 +304,7 @@ if cr:
     if save_fig:
         outfile = os.path.join(out, "Spectrum_CR.pdf")
         plt.savefig(outfile)
+        plt.close()
     else:
         plt.show()
 
@@ -380,6 +383,7 @@ for i, column in enumerate(col_list):
         if save_fig:
             outfile = os.path.join(out_folder, "Scatter_" + column + ".pdf")
             plt.savefig(outfile)
+            plt.close()
         else:
             plt.plot()
     print(i)
