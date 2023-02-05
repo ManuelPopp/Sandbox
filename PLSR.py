@@ -316,6 +316,8 @@ for i, column in enumerate(col_list):
     ##------------------------------------------------------------------------|
     ## Read y data
     y = y_df[column].values.squeeze()[order]
+    ## Mean y value for calculation of the relative Root Mean Squared Error
+    y_mean = np.mean(y)
     
     ##------------------------------------------------------------------------|
     ## Test with varying number of components
@@ -332,8 +334,13 @@ for i, column in enumerate(col_list):
         r2s.append(r2)
         mses.append(mse)
     
+    rmses = [np.sqrt(mse) for mse in mses]
+    rrmses = [rmse / y_mean for rmse in rmses]
+    
     fig_dir = None if save_fig == False else os.path.join(out_folder)
     plot_metrics(mses, "MSE", "min", try_latent_vars, fig_dir)
+    plot_metrics(rmses, "RMSE", "min", try_latent_vars, fig_dir)
+    plot_metrics(rrmses, "relative RMSE", "min", try_latent_vars, fig_dir)
     plot_metrics(r2s, "R2", "max", try_latent_vars, fig_dir)
     
     index_max_r2s = np.argmax(r2s)
@@ -347,7 +354,9 @@ for i, column in enumerate(col_list):
                                      crossval = cv,
                                      mcreps = mcr)
     metrics = {"R2" : r2,
-               "MSE" : mse}
+               "MSE" : mse,
+               "RMSE" : np.sqrt(mse),
+               "RRMSE" : np.sqrt(mse) / y_mean}
     metrics_str = "R2: %0.4f, MSE: %0.4f" % (r2, mse)
     report_vals[column] = metrics
     
