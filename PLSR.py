@@ -245,6 +245,7 @@ cr = args.cr
 save_fig = args.save_fig
 
 col_list = cols.split(";")
+os.makedirs(out, exist_ok = True)
 
 #-----------------------------------------------------------------------------|
 # Read X data
