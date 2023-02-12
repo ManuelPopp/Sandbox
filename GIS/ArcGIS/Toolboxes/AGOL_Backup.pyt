@@ -4,8 +4,7 @@
 Created on Thu Feb  9 12:12:37 2023
 """
 __author__ = "Manuel"
-__copyright__ = "Thu Feb  9 12:12:37 2023"
-__credits__ = ["Manuel R. Popp"]
+__date__ = "Thu Feb  9 12:12:37 2023"
 __license__ = "Unlicense"
 __version__ = "1.0.1"
 __maintainer__ = "Manuel R. Popp"
