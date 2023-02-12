@@ -9,7 +9,7 @@ __license__ = "Unlicense"
 __version__ = "1.0.1"
 __maintainer__ = "Manuel R. Popp"
 __email__ = "requests@cdpopp.de"
-__status__ = "Production"
+__status__ = "Beta"
 
 import os, shutil, math
 import arcpy as ap
