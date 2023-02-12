@@ -117,9 +117,9 @@ class BackupLocal(object):
         [USR, PW, COMPLETE, OWNER, DTYPES, TAGS, OVERWRITE, OUT_DIR] = \
             parameters
         if COMPLETE.value:
-            OWNER.enabled = DTYPES.enabled = TAGS.enabled = False
+            DTYPES.enabled = TAGS.enabled = False
         else:
-            OWNER.enabled = DTYPES.enabled = TAGS.enabled = True
+            DTYPES.enabled = TAGS.enabled = True
         return
 
     def updateMessages(self, parameters):
