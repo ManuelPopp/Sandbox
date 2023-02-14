@@ -27,24 +27,72 @@ from sklearn.cross_decomposition import PLSRegression
 from sklearn.model_selection import cross_validate
 from sklearn.model_selection import ShuffleSplit
 from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import make_scorer
 ## Continuum removal
 from scipy.spatial import ConvexHull
 from scipy.interpolate import interp1d
 
 #-----------------------------------------------------------------------------|
 # Functions
-def try_read(in_df, hdr = "infer", idx_col = None):
-    '''Try different separatrs to read the input table data.'''
-    df = pd.read_table(in_df, header = hdr, index_col = idx_col)
-    possible_separators = ["\t", ";", ","]
-    for separator in possible_separators:
-        df_new = pd.read_table(in_df, sep = separator,
-                               header = hdr, index_col = idx_col)
-        df = df_new if len(df_new.columns) > len(df.columns) else df
+def try_read(in_df, hdr = "infer", idx_col = None, sheet = 0):
+    '''Try different separatrs to read the input table data.
+
+    Parameters
+    ----------
+    in_df : str
+        Full path to the input data (see pandas.read_table documentation for
+        readable data formats).
+    hdr : {int, list of int, None}, optional
+        Either integer(s) indicating a row(s) of the data, "infer", or None.
+        The default is "infer".
+    idx_col : {int, str, sequence of int/str, False, None}, optional
+        Integer/string indicating the column that contains row names of the
+        input table, or False/None. The default is None.
+    sheet : {str, int, or None}, optional
+        Sheet name or position in case the input data is an Excel spreadsheet.
+        The default is 0.
+
+    Returns
+    -------
+    df : pandas.DataFrame
+        An instance of type pandas.DataFrame.
+    '''
+    if os.path.splitext(in_df)[1] == ".xlsx":
+        df = pd.read_excel(in_df, header = hdr, index_col = idx_col,
+                           sheet_name = sheet)
+    else:
+        df = pd.read_table(in_df, header = hdr, index_col = idx_col)
+        possible_separators = ["\t", ";", ","]
+        for separator in possible_separators:
+            df_new = pd.read_table(in_df, sep = separator,
+                                   header = hdr, index_col = idx_col)
+            df = df_new if len(df_new.columns) > len(df.columns) else df
     return df
 
 def check_column_name(c, c_list):
-    '''Check if a column (either key or int) is available in input data.'''
+    '''Check if a column (either key or int) is available in input data.
+
+    Parameters
+    ----------
+    c : {int, str}
+        Name or index of a column to search for.
+    c_list : {list}
+        List of column names from a pandas.DataFrame.
+
+    Raises
+    ------
+    Warning
+        Warn in case the first parameter is interreted as numeric.
+    LookupError
+        Raise error in case the first parameter cannot be found in the list of
+        columns (neither literal, nor as an index).
+
+    Returns
+    -------
+    c : {str, None}
+        Column name within the list of column names that best matches the
+        search criteria. None, if no matching column name can be found.
+    '''
     if c not in c_list:
         c = c.strip()
         if c not in c_list:
@@ -60,16 +108,61 @@ def check_column_name(c, c_list):
                 raise LookupError(mssg)
     return c
 
+def relative_root_mean_squared_error(y_true, y_pred):
+    num = np.sum(np.square(y_true - y_pred))
+    den = np.sum(np.square(y_pred))
+    squared_error = num/den
+    rrmse_loss = np.sqrt(squared_error)
+    return rrmse_loss
+
+relRMSE = make_scorer(relative_root_mean_squared_error,
+                      greater_is_better = False)
+
+metrics = {"r2" : "r2",
+           "MSE" : "neg_mean_squared_error",
+           "RMSE" : "neg_root_mean_squared_error",
+           "relRMSE" : relRMSE
+           }
+
 def optimise_pls_cv(X_vals, y_vals, n_comp, crossval, mcreps,
-                    CV_method = "ss"):
-    '''Fit PLS regression model using cross-validation.'''
+                    CV_method = "ss", metrics = metrics):
+    '''Fit PLS regression model using cross-validation.
+
+    Parameters
+    ----------
+    X_vals : numpy.array
+        Array containing the X (predictor) values.
+    y_vals : numpy.array
+        Array containing the y (dependent variable) values.
+    n_comp : int
+        Number of components/latent variables to use in the model.
+    crossval : {int, float}
+        Cross-validation split.
+    mcreps : int
+        Number of Monte-Carlo repetitions.
+    CV_method : {"k-fold", "loo", "lpo", "ss"}, optional
+        Cross-validation method. The default is "ss".
+        k-fold: k-fold
+        loo: Leave-one-out
+        lpo: Leave-p-out
+        ss: Shuffle split (Monte-Carlo)
+
+    Returns
+    -------
+    pls : sklearn.cross_decomposition.PLSRegression
+        Model fitted to the data.
+    mean_r2_error : float
+        Mean r-squared error across cross-validation sets.
+    test_mse : float
+        Average mean squared error across cross-validation sets.
+    '''
     # Define PLS object
     pls = PLSRegression(n_components = n_comp)
 
     # Cross-validation
     if CV_method.lower() == "ss":
-        cv_split = ShuffleSplit(n_splits = mcreps, test_size = 1/crossval,
-                                random_state = 0)
+        cv_split = ShuffleSplit(n_splits = mcreps, test_size = 1./crossval,
+                                random_state = 42)
     elif CV_method.lower() == "lpo":
         from sklearn.model_selection import LeavePOut
         cv_split = LeavePOut(p = crossval)
@@ -85,13 +178,38 @@ def optimise_pls_cv(X_vals, y_vals, n_comp, crossval, mcreps,
                     "leave-p-out, 'ss': shuffle split."
         ValueError(mssg.format(CV_method))
     cvs = cross_validate(pls, X_vals, y_vals, cv = cv_split,
-                         scoring = ["r2", "neg_mean_squared_error"])
-    mean_r2_error = np.mean(cvs["test_r2"])
-    test_mse = -np.mean(cvs["test_neg_mean_squared_error"])
-    return pls, mean_r2_error, test_mse
+                         scoring = metrics,
+                         return_estimator = False)
+    scores = {}
+    for key in metrics:
+        scores[key] = np.mean(np.absolute(cvs["test_" + key]))
+    #mean_r2_error = np.mean(cvs["test_r2"])
+    #test_mse = np.mean(np.absolute(cvs["test_neg_mean_squared_error"]))
+    #test_rmse = np.mean(np.absolute(cvs["test_neg_root_mean_squared_error"]))
+    return pls, scores#mean_r2_error, test_mse, test_rmse
 
 def plot_metrics(vals, ylabel, objective, xticks, plt_dir = None):
-    '''Plot accurracy metrics.'''
+    '''Plot accurracy metrics.
+
+    Parameters
+    ----------
+    vals : {numpy.array, list}
+        List or array containing the values to plot against xticks.
+    ylabel : str
+        Y-axis label for the plot.
+    objective : {"min", "max"}
+        Whether a minimum or a maximum value of the metric indicates the best
+        model fit.
+    xticks : {list, numpy.array}
+        List or array indicating the x-axis tick positions (numbers of
+        components).
+    plt_dir : {str, None}, optional
+        Directory to save figures to. The default is None.
+
+    Returns
+    -------
+    None.
+    '''
     plt.figure(figsize = (8, 4.5))
     with plt.style.context("ggplot"):
         plt.plot(xticks, np.array(vals), "-v", color = "blue", mfc = "blue")
@@ -115,11 +233,41 @@ def plot_metrics(vals, ylabel, objective, xticks, plt_dir = None):
 #-----------------------------------------------------------------------------|
 # Classes
 class SpectralTable():
-    '''Class to store and process spectral information.'''
+    '''Class to store and process spectral information.
+    
+    Parameters
+    ----------
+    data: {numpy.ndarray, pandas.DataFrame, iterable, dict}
+        Any object transferrable into a pandas.DataFrame.
+    
+    Attributes
+    ----------
+    CR: bool
+        Information on whether continuum removal was applied to the data.
+    values: pandas.DataFrame
+        Values as a pandas.DataFrame.
+    T: pandas.DataFrame
+        Values as a pandas.DataFrame after transformation.
+    array: numpy.array
+        Values as a numpy.array.
+    arrayT: numpy.array
+        Values as a numpy.array after transformation.
+    sampleIDs: pandas.DataFrame.columns
+        Column names of the object.
+    wavelengths: numpy.array
+        Row names of the object (wavelengths of the spectral data) as "float"
+        type.
+    
+    Methods
+    -------
+    cut_spectrum():
+        Replace segments of the spectra by a linear function.
+    remove_continuum():
+        Apply continuum removal to the spectra.
+    '''
     def __init__(self, data):
         table = pd.DataFrame(data)
         self.CR = False
-        self.SF = False
         self.values = table
         self.sampleIDs = table.columns
         self.wavelengths = table.index.astype("float")
@@ -138,7 +286,22 @@ class SpectralTable():
     
     def cut_spectrum(self, overwrite = True, *boundaries):
         '''Replace segments of the spectra by linear functions.
-        boundaries = a list of lists of shape [min, max]'''
+        boundaries = a list of lists of shape [min, max]
+
+        Parameters
+        ----------
+        overwrite : bool, optional
+            Overwrite the original pandas.DataFrame. The default is True.
+        *boundaries : (nested) list
+            (List of) boundary values (shape: [min, max]) to indicate
+            wavelength segments that are to be replaced.
+
+        Returns
+        -------
+        output: {pandas.DataFrame, None}
+            Dataframe after replacing wavelength segments or None, if
+            overwrite is True.
+        '''
         out = self.values if overwrite else self.values.copy()
         for bound in boundaries:
             [lambda_min, lambda_max] = bound
@@ -155,10 +318,28 @@ class SpectralTable():
                 b = col[row_min] - (m * wls[row_min])
                 col[row_min : row_max] = (m * wls[row_min]) + b
                 out[name] = col
-        return
+        if overwrite:
+            output = None
+        else:
+            output = out
+        return output
     
     def remove_continuum(self, overwrite = True, show = False):
-        '''Apply continuum removal to the spectra.'''
+        '''Apply continuum removal to the spectra.
+
+        Parameters
+        ----------
+        overwrite : boot, optional
+            Overwrite the original pandas.DataFrame. The default is True.
+        show : bool, optional
+            Plot and show figure of the updated spectra. The default is False.
+
+        Returns
+        -------
+        output: {pandas.DataFrame, None}
+            Dataframe after replacing wavelength segments or None, if
+            overwrite is True.
+        '''
         if self.CR:
             print("Continuum already removed. Skip operation.")
         else:
@@ -188,7 +369,11 @@ class SpectralTable():
                     axes[1].legend()
                     plt.show()
             self.CR = True
-        return
+        if overwrite:
+            output = None
+        else:
+            output = out
+        return output
 
 #-----------------------------------------------------------------------------|
 # Get input variables
@@ -219,6 +404,12 @@ def parseArguments():
     parser.add_argument("-mcr", "--mcr",
                         help = "Monte-Carlo repetitions.",
                         type = int, default = 100)
+    parser.add_argument("-sheet_x", "--sheet_x",
+                        help = "Input sheet index if in_x is an Excel sheet.",
+                        type = str, default = "0")
+    parser.add_argument("-sheet_y", "--sheet_y",
+                        help = "Input sheet index if in_y is an Excel sheet.",
+                        type = str, default = "0")
     parser.add_argument("-cv", "--cv",
                         help = "Cross-validation split.",
                         type = str, default = 5)
@@ -236,26 +427,29 @@ if __name__ == "__main__":
 
 in_x = args.in_x
 in_y = args.in_y
-cols = args.vars
 id_col = args.id_col
+cols = args.vars
 mlv = args.mlv
 mcr = args.mcr
 cv = args.cv
 out = args.out
+sheet_x = int(args.sheet_x) if args.sheet_x.isnumeric() else args.sheet_x
+sheet_y = int(args.sheet_y) if args.sheet_y.isnumeric() else args.sheet_y
 cr = args.cr
 save_fig = args.save_fig
+prog_bar = True
 
-col_list = cols.split(";")
+col_list = None if cols is None else cols.split(";")
 os.makedirs(out, exist_ok = True)
 
 #-----------------------------------------------------------------------------|
 # Read X data
-x_df = try_read(in_x, hdr = 0, idx_col = 0)
+x_df = try_read(in_x, hdr = 0, idx_col = 0, sheet = sheet_x)
 X = SpectralTable(x_df)
 x_ids = X.sampleIDs
 
 # Read y dataframe
-y_df = try_read(in_y)
+y_df = try_read(in_y, sheet = sheet_y)
 
 # Check whether integers have been handed instead of column names
 y_col_names = list(y_df.columns)
@@ -269,10 +463,14 @@ if id_col not in y_col_names:
         raise LookupError("ID column not found in y data set.")
 
 # Check(/correct) column names for y data
-for i, c in enumerate(col_list):
-    catch_c = check_column_name(c, y_col_names)
-    if catch_c != c:
-        col_list[i] = catch_c
+if col_list is None:
+    col_list = y_col_names.copy()
+    col_list.remove(id_col)
+else:
+    for i, c in enumerate(col_list):
+        catch_c = check_column_name(c, y_col_names)
+        if catch_c != c:
+            col_list[i] = catch_c
 
 # Arrange y data
 y_ids = list(y_df[id_col].values)
@@ -311,7 +509,8 @@ if cr:
 #-----------------------------------------------------------------------------|
 # Loop through y variables
 report_vals = dict()
-
+report_vals_production_lvl_model = dict()
+    
 for i, column in enumerate(col_list):
     out_folder = os.path.join(out, column)
     os.makedirs(out_folder, exist_ok = True)
@@ -321,60 +520,83 @@ for i, column in enumerate(col_list):
     y = y_df[column].values.squeeze()[order]
     ## Mean y value for calculation of the relative Root Mean Squared Error
     y_mean = np.mean(y)
+    y_min = np.min(y)
+    y_max = np.max(y)
     
     ##------------------------------------------------------------------------|
     ## Test with varying number of components
-    r2s = []
-    mses = []
+    cv_scores = {}
+    for key in metrics:
+        cv_scores[key] = []
+    
     try_latent_vars = np.arange(1, mlv)
     
     for n_comp in try_latent_vars:
-        model, r2, mse = optimise_pls_cv(X_vals = X.arrayT,
-                                         y_vals = y,
-                                         n_comp = n_comp,
-                                         crossval = cv,
-                                         mcreps = mcr)
-        r2s.append(r2)
-        mses.append(mse)
-    
-    rmses = [np.sqrt(mse) for mse in mses]
-    rrmses = [rmse / y_mean for rmse in rmses]
+        model, scores = optimise_pls_cv(X_vals = X.arrayT,
+                                        y_vals = y,
+                                        n_comp = n_comp,
+                                        crossval = cv,
+                                        mcreps = mcr)
+        for key in scores:
+            cv_scores[key].append(scores[key])
     
     fig_dir = None if save_fig == False else os.path.join(out_folder)
-    plot_metrics(mses, "MSE", "min", try_latent_vars, fig_dir)
-    plot_metrics(rmses, "RMSE", "min", try_latent_vars, fig_dir)
-    plot_metrics(rrmses, "relative RMSE", "min", try_latent_vars, fig_dir)
-    plot_metrics(r2s, "R2", "max", try_latent_vars, fig_dir)
+    for key in cv_scores:
+        obj = "max" if key == "r2" else "min"
+        plot_metrics(cv_scores[key], key, obj, try_latent_vars, fig_dir)
     
-    index_max_r2s = np.argmax(r2s)
-    lv = try_latent_vars[index_max_r2s]
+    ## Find metric optimum
+    index_max_r2s = np.argmax(cv_scores["r2"])
+    index_min_rmse = np.argmin(cv_scores["RMSE"])
+    index_min_mse = np.argmin(cv_scores["MSE"])
+    
+    ## Get optimum number of latent variables
+    lv = try_latent_vars[index_min_rmse]
     
     ##------------------------------------------------------------------------|
-    ## Optimise
-    model, r2, mse = optimise_pls_cv(X_vals = X.arrayT,
-                                     y_vals = y,
-                                     n_comp = lv,
-                                     crossval = cv,
-                                     mcreps = mcr)
-    metrics = {"R2" : r2,
-               "MSE" : mse,
-               "RMSE" : np.sqrt(mse),
-               "RRMSE" : np.sqrt(mse) / y_mean}
-    metrics_str = "R2: %0.4f, MSE: %0.4f" % (r2, mse)
-    report_vals[column] = metrics
+    ## Create model with optimal number of variables
+    model, cv_scores = optimise_pls_cv(X_vals = X.arrayT,
+                                       y_vals = y,
+                                       n_comp = lv,
+                                       crossval = cv,
+                                       mcreps = mcr)
     
+    ## Prepare cross-validation scores for best model for report
+    report_vals[column] = cv_scores
+    
+    ##------------------------------------------------------------------------|
+    ## Fit model with optimum number of latent variables and  all data points
+    ## = "production-level" model
     model.fit(X.arrayT, y)
     
+    ## Export model
     model_dir = os.path.join(out_folder, column + "_fit.pkl")
     pk.dump(model, open(model_dir, "wb"))
     
-    y_cv = model.predict(X.arrayT)
+    ## Predict y using final model
+    y_pred = model.predict(X.arrayT)
     
+    ## Prepare goodness-of-fit metrics of production-lvl model for export
+    r2 = r2_score(y, y_pred)
+    MSE = mean_squared_error(y, y_pred)
+    rRMSE = relative_root_mean_squared_error(y, y_pred)
+    
+    production_lvl_scores = dict()
+    production_lvl_scores["Latent variables"] = lv
+    production_lvl_scores["R2"] = r2
+    production_lvl_scores["MSE"] = MSE
+    production_lvl_scores["rRMSE"] = rRMSE
+    
+    report_vals_production_lvl_model[column] = production_lvl_scores
+    
+    ##------------------------------------------------------------------------|
+    ## Plot final model true vs prediction scatter plot
     plt.figure(figsize = (6, 6))
     with plt.style.context("ggplot"):
-        plt.scatter(y, y_cv, color = "red")
+        plt.scatter(y, y_pred, color = "red")
+        plt.plot(y, y, "-g")
         plt.plot(y, y, "-g", label = "Expected regression line")
-        z = np.polyfit(y, y_cv, 1)
+        z = np.polyfit(y, y_pred, 1)
         plt.plot(np.polyval(z, y), y, color = "blue",
                  label = "Predicted regression line")
         plt.xlabel("Actual")
@@ -390,11 +612,27 @@ for i, column in enumerate(col_list):
 
 #-----------------------------------------------------------------------------|
 # Write report
+header_string = "PLS Regression Report for {0} variables\nVariables: {1}\n" + \
+    "Continuum removal: {2}\n\n"
+section_sep = "-" * 80 + "\n"
+
 report_file = os.path.join(out, "Report.txt")
 with open(report_file, "w") as f:
+    '''Write header'''
+    f.write(header_string.format(int(i + 1), ", ".join(col_list), str(cr)))
+    '''Report cross-validation results'''
+    f.write(section_sep + "Cross-validation metrics\n")
     for model_i in col_list:
         f.write(model_i + "\n")
         tmp_dict = report_vals[model_i]
+        for k in tmp_dict.keys():
+            f.write(k + ": " + str(tmp_dict[k]) + "\n")
+        f.write("\n")
+    '''Report final model metrics'''
+    f.write(section_sep + "Production-level model goodness of fit\n")
+    for model_i in col_list:
+        f.write(model_i + "\n")
+        tmp_dict = report_vals_production_lvl_model[model_i]
         for k in tmp_dict.keys():
             f.write(k + ": " + str(tmp_dict[k]) + "\n")
         f.write("\n")
