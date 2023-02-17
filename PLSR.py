@@ -16,7 +16,7 @@ __status__ = "Production"
 #-----------------------------------------------------------------------------|
 # Import modules
 ## General
-import os, argparse
+import os, argparse, random
 import pandas as pd
 import numpy as np
 import pickle as pk
@@ -24,10 +24,7 @@ import pickle as pk
 import matplotlib.pyplot as plt
 ## Model training and quality assessment
 from sklearn.cross_decomposition import PLSRegression
-from sklearn.model_selection import cross_validate
-from sklearn.model_selection import ShuffleSplit
-from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.metrics import make_scorer
+from sklearn.model_selection import train_test_split
 ## Continuum removal
 from scipy.spatial import ConvexHull
 from scipy.interpolate import interp1d
@@ -108,25 +105,54 @@ def check_column_name(c, c_list):
                 raise LookupError(mssg)
     return c
 
+def test_input(x0, x1):
+    x2, x3 = np.squeeze(x0), np.squeeze(x1)
+    if x2.shape != x3.shape:
+        mssg = "Input shapes {0} and {1} do not match after removal of " + \
+            "length zero dimensions."
+        raise Warning(mssg(x2.shape, x3.shape))
+        if x2.shape == x3.T.shape:
+            x4, x5 = x2, x3.T
+            raise Warning("Attempt to transform x1.")
+    else:
+        x4, x5 = x2, x3
+    return x4, x5
+
+def r_squared(y_true, y_pred):
+    y_true, y_pred = test_input(y_true, y_pred)
+    cc = np.corrcoef(y_true, y_pred)
+    r2 = cc[1][0] ** 2
+    return r2
+
+def mean_squared_error(y_true, y_pred):
+    y_true, y_pred = test_input(y_true, y_pred)
+    se = np.square(np.subtract(y_true, y_pred))
+    mse = se.mean()
+    return mse
+
+def root_mean_squared_error(y_true, y_pred):
+    y_true, y_pred = test_input(y_true, y_pred)
+    mse = mean_squared_error(y_true, y_pred)
+    rmse = np.sqrt(mse)
+    return rmse
+
 def relative_root_mean_squared_error(y_true, y_pred):
-    num = np.sum(np.square(y_true - y_pred))
+    y_true, y_pred = test_input(y_true, y_pred)
+    num = np.sum(np.square(y_true - y_pred)) / len(y_true)
     den = np.sum(np.square(y_pred))
-    squared_error = num/den
-    rrmse_loss = np.sqrt(squared_error)
-    return rrmse_loss
+    squared_error = num / den
+    rrmse = np.sqrt(squared_error)
+    return rrmse
 
-relRMSE = make_scorer(relative_root_mean_squared_error,
-                      greater_is_better = False)
-
-metrics = {"r2" : "r2",
-           "MSE" : "neg_mean_squared_error",
-           "RMSE" : "neg_root_mean_squared_error",
-           "relRMSE" : relRMSE
+metrics = {"r2" : r_squared,
+           "MSE" : mean_squared_error,
+           "RMSE" : root_mean_squared_error,
+           "relRMSE" : relative_root_mean_squared_error
            }
 
-def optimise_pls_cv(X_vals, y_vals, n_comp, crossval, mcreps,
-                    CV_method = "ss", metrics = metrics):
-    '''Fit PLS regression model using cross-validation.
+def cross_validate_plsr(X_vals, y_vals, n_comp, crossval, mcreps,
+                    metrics = metrics):
+    '''Fit PLS regression model using Monte-Carlo Cross-Validation.
 
     Parameters
     ----------
@@ -140,12 +166,6 @@ def optimise_pls_cv(X_vals, y_vals, n_comp, crossval, mcreps,
         Cross-validation split.
     mcreps : int
         Number of Monte-Carlo repetitions.
-    CV_method : {"k-fold", "loo", "lpo", "ss"}, optional
-        Cross-validation method. The default is "ss".
-        k-fold: k-fold
-        loo: Leave-one-out
-        lpo: Leave-p-out
-        ss: Shuffle split (Monte-Carlo)
 
     Returns
     -------
@@ -156,37 +176,50 @@ def optimise_pls_cv(X_vals, y_vals, n_comp, crossval, mcreps,
     test_mse : float
         Average mean squared error across cross-validation sets.
     '''
-    # Define PLS object
-    pls = PLSRegression(n_components = n_comp)
-
-    # Cross-validation
-    if CV_method.lower() == "ss":
-        cv_split = ShuffleSplit(n_splits = mcreps, test_size = 1./crossval,
-                                random_state = 42)
-    elif CV_method.lower() == "lpo":
-        from sklearn.model_selection import LeavePOut
-        cv_split = LeavePOut(p = crossval)
-    elif CV_method.lower() == "loo":
-        from sklearn.model_selection import LeaveOneOut
-        cv_split = LeaveOneOut()
-    elif CV_method.lower() == "kfold":
-        from sklearn.model_selection import KFold
-        cv_split = KFold(n_splits = crossval)
-    else:
-        mssg = "Invalid argument: {0} for parameter CV_method. Use " + \
-                "one in 'kfold': k-fold, 'loo': leave-one-out, 'lpo': " + \
-                    "leave-p-out, 'ss': shuffle split."
-        ValueError(mssg.format(CV_method))
-    cvs = cross_validate(pls, X_vals, y_vals, cv = cv_split,
-                         scoring = metrics,
-                         return_estimator = False)
-    scores = {}
+    # Check input data shape
+    if len(X_vals) != len(y_vals):
+        mssg = "Dimension mismatch. Argument X_vals is of shape {0} while" + \
+            " argument y_vals is of shape {1}. Expected equal number of rows."
+        raise ValueError(mssg.format(X_vals.shape, y_vals.shape))
+    
+    # Set variables
+    print("Number of latent variables is {0}.".format(n_comp))
+    n_samples = len(y_vals)
+    samples = np.array(list(range(n_samples)))
+    test_size = int(n_samples / crossval)
+    train_size = n_samples - test_size
+    print("Train size: {0}, test size {1}.".format(train_size, test_size))
+    
+    cvs = {}
     for key in metrics:
-        scores[key] = np.mean(np.absolute(cvs["test_" + key]))
-    #mean_r2_error = np.mean(cvs["test_r2"])
-    #test_mse = np.mean(np.absolute(cvs["test_neg_mean_squared_error"]))
-    #test_rmse = np.mean(np.absolute(cvs["test_neg_root_mean_squared_error"]))
-    return pls, scores#mean_r2_error, test_mse, test_rmse
+        cvs[key] = []
+    
+    # Monte-Carlo repetitions
+    for mcrep in range(mcreps):
+        # Train model
+        train_set, test_set = train_test_split(samples, test_size = test_size)
+        pls = PLSRegression(n_components = n_comp)
+        X_train, y_train = X_vals[train_set,:], y_vals[train_set]
+        pls.fit(X_train, y_train)
+        
+        # Predict test data
+        X_test, y_test = X_vals[test_set,:], y_vals[test_set]
+        y_pred = pls.predict(X_test)
+        
+        # Calculate metrics
+        for key in metrics:
+            metric = metrics[key]
+            cvs[key].append(metric(y_test, y_pred))
+        del pls
+    mssg = "Shape X: {0} and shape y: {1}"
+    print(mssg.format(X_train.shape, y_train.shape))
+    
+    # Average metrics
+    scores_out = {}
+    for key in metrics:
+        scores_out[key] = np.mean(np.array(cvs[key]))
+    
+    return scores_out
 
 def plot_metrics(vals, ylabel, objective, xticks, plt_dir = None):
     '''Plot accurracy metrics.
@@ -425,214 +458,219 @@ def parseArguments():
 if __name__ == "__main__":
     args = parseArguments()
 
-in_x = args.in_x
-in_y = args.in_y
-id_col = args.id_col
-cols = args.vars
-mlv = args.mlv
-mcr = args.mcr
-cv = args.cv
-out = args.out
-sheet_x = int(args.sheet_x) if args.sheet_x.isnumeric() else args.sheet_x
-sheet_y = int(args.sheet_y) if args.sheet_y.isnumeric() else args.sheet_y
-cr = args.cr
-save_fig = args.save_fig
-prog_bar = True
-
-col_list = None if cols is None else cols.split(";")
-os.makedirs(out, exist_ok = True)
-
-#-----------------------------------------------------------------------------|
-# Read X data
-x_df = try_read(in_x, hdr = 0, idx_col = 0, sheet = sheet_x)
-X = SpectralTable(x_df)
-x_ids = X.sampleIDs
-
-# Read y dataframe
-y_df = try_read(in_y, sheet = sheet_y)
-
-# Check whether integers have been handed instead of column names
-y_col_names = list(y_df.columns)
-
-if id_col not in y_col_names:
-    try:
-        idx = int(id_col)
-        raise Warning("Assuming column index input for ID column.")
-        id_col = y_col_names[idx]
-    except:
-        raise LookupError("ID column not found in y data set.")
-
-# Check(/correct) column names for y data
-if col_list is None:
-    col_list = y_col_names.copy()
-    col_list.remove(id_col)
-else:
-    for i, c in enumerate(col_list):
-        catch_c = check_column_name(c, y_col_names)
-        if catch_c != c:
-            col_list[i] = catch_c
-
-# Arrange y data
-y_ids = list(y_df[id_col].values)
-
-order = [i for i, item in enumerate(y_ids) if str(item) in x_ids]
-
-#-----------------------------------------------------------------------------|
-# Plot data
-plt.figure(figsize = (8, 4.5))
-wl = X.wavelengths
-with plt.style.context("ggplot"):
-    plt.plot(wl, X.values)
-    plt.xlabel("Wavelengths (nm)")
-    plt.ylabel("Reflectance [0, 10000]")
-    if save_fig:
-        outfile = os.path.join(out, "Spectrum.pdf")
-        plt.savefig(outfile)
-        plt.close()
+    in_x = args.in_x
+    in_y = args.in_y
+    id_col = args.id_col
+    cols = args.vars
+    mlv = int(args.mlv)
+    mcr = int(args.mcr)
+    cv = float(args.cv)
+    out = args.out
+    sheet_x = int(args.sheet_x) if args.sheet_x.isnumeric() else args.sheet_x
+    sheet_y = int(args.sheet_y) if args.sheet_y.isnumeric() else args.sheet_y
+    cr = args.cr
+    save_fig = args.save_fig
+    prog_bar = True
+    
+    col_list = None if cols is None else cols.split(";")
+    os.makedirs(out, exist_ok = True)
+    
+    #-------------------------------------------------------------------------|
+    # Read X data
+    x_df = try_read(in_x, hdr = 0, idx_col = 0, sheet = sheet_x)
+    X = SpectralTable(x_df)
+    x_ids = X.sampleIDs
+    
+    # Read y dataframe
+    y_df = try_read(in_y, sheet = sheet_y)
+    
+    # Check whether integers have been handed instead of column names
+    y_col_names = list(y_df.columns)
+    
+    if id_col not in y_col_names:
+        try:
+            idx = int(id_col)
+            raise Warning("Assuming column index input for ID column.")
+            id_col = y_col_names[idx]
+        except:
+            raise LookupError("ID column not found in y data set.")
+    
+    # Check(/correct) column names for y data
+    if col_list is None:
+        col_list = y_col_names.copy()
+        col_list.remove(id_col)
     else:
-        plt.show()
-
-if cr:
+        for i, c in enumerate(col_list):
+            catch_c = check_column_name(c, y_col_names)
+            if catch_c != c:
+                col_list[i] = catch_c
+    
+    # Arrange y data
+    y_ids = list(y_df[id_col].values)
+    
+    order = [i for i, item in enumerate(y_ids) if str(item) in x_ids]
+    
+    #-------------------------------------------------------------------------|
+    # Plot data
     plt.figure(figsize = (8, 4.5))
-    X.remove_continuum()
+    wl = X.wavelengths
     with plt.style.context("ggplot"):
         plt.plot(wl, X.values)
         plt.xlabel("Wavelengths (nm)")
-        plt.ylabel("Hull Quotient [0, 1]")
-    if save_fig:
-        outfile = os.path.join(out, "Spectrum_CR.pdf")
-        plt.savefig(outfile)
-        plt.close()
-    else:
-        plt.show()
-
-#-----------------------------------------------------------------------------|
-# Loop through y variables
-report_vals = dict()
-report_vals_production_lvl_model = dict()
-    
-for i, column in enumerate(col_list):
-    out_folder = os.path.join(out, column)
-    os.makedirs(out_folder, exist_ok = True)
-    
-    ##------------------------------------------------------------------------|
-    ## Read y data
-    y = y_df[column].values.squeeze()[order]
-    ## Mean y value for calculation of the relative Root Mean Squared Error
-    y_mean = np.mean(y)
-    y_min = np.min(y)
-    y_max = np.max(y)
-    
-    ##------------------------------------------------------------------------|
-    ## Test with varying number of components
-    cv_scores = {}
-    for key in metrics:
-        cv_scores[key] = []
-    
-    try_latent_vars = np.arange(1, mlv)
-    
-    for n_comp in try_latent_vars:
-        model, scores = optimise_pls_cv(X_vals = X.arrayT,
-                                        y_vals = y,
-                                        n_comp = n_comp,
-                                        crossval = cv,
-                                        mcreps = mcr)
-        for key in scores:
-            cv_scores[key].append(scores[key])
-    
-    fig_dir = None if save_fig == False else os.path.join(out_folder)
-    for key in cv_scores:
-        obj = "max" if key == "r2" else "min"
-        plot_metrics(cv_scores[key], key, obj, try_latent_vars, fig_dir)
-    
-    ## Find metric optimum
-    index_max_r2s = np.argmax(cv_scores["r2"])
-    index_min_rmse = np.argmin(cv_scores["RMSE"])
-    index_min_mse = np.argmin(cv_scores["MSE"])
-    
-    ## Get optimum number of latent variables
-    lv = try_latent_vars[index_min_rmse]
-    
-    ##------------------------------------------------------------------------|
-    ## Create model with optimal number of variables
-    model, cv_scores = optimise_pls_cv(X_vals = X.arrayT,
-                                       y_vals = y,
-                                       n_comp = lv,
-                                       crossval = cv,
-                                       mcreps = mcr)
-    
-    ## Prepare cross-validation scores for best model for report
-    report_vals[column] = cv_scores
-    
-    ##------------------------------------------------------------------------|
-    ## Fit model with optimum number of latent variables and  all data points
-    ## = "production-level" model
-    model.fit(X.arrayT, y)
-    
-    ## Export model
-    model_dir = os.path.join(out_folder, column + "_fit.pkl")
-    pk.dump(model, open(model_dir, "wb"))
-    
-    ## Predict y using final model
-    y_pred = model.predict(X.arrayT)
-    
-    ## Prepare goodness-of-fit metrics of production-lvl model for export
-    r2 = r2_score(y, y_pred)
-    MSE = mean_squared_error(y, y_pred)
-    rRMSE = relative_root_mean_squared_error(y, y_pred)
-    
-    production_lvl_scores = dict()
-    production_lvl_scores["Latent variables"] = lv
-    production_lvl_scores["R2"] = r2
-    production_lvl_scores["MSE"] = MSE
-    production_lvl_scores["rRMSE"] = rRMSE
-    
-    report_vals_production_lvl_model[column] = production_lvl_scores
-    
-    ##------------------------------------------------------------------------|
-    ## Plot final model true vs prediction scatter plot
-    plt.figure(figsize = (6, 6))
-    with plt.style.context("ggplot"):
-        plt.scatter(y, y_pred, color = "red")
-        plt.plot(y, y, "-g")
-        plt.plot(y, y, "-g", label = "Expected regression line")
-        z = np.polyfit(y, y_pred, 1)
-        plt.plot(np.polyval(z, y), y, color = "blue",
-                 label = "Predicted regression line")
-        plt.xlabel("Actual")
-        plt.ylabel("Predicted")
-        plt.legend()
+        plt.ylabel("Reflectance [0, 10000]")
         if save_fig:
-            outfile = os.path.join(out_folder, "Scatter_" + column + ".pdf")
+            outfile = os.path.join(out, "Spectrum.pdf")
             plt.savefig(outfile)
             plt.close()
         else:
-            plt.plot()
-    print(i)
-
-#-----------------------------------------------------------------------------|
-# Write report
-header_string = "PLS Regression Report for {0} variables\nVariables: {1}\n" + \
-    "Continuum removal: {2}\n\n"
-section_sep = "-" * 80 + "\n"
-
-report_file = os.path.join(out, "Report.txt")
-with open(report_file, "w") as f:
-    '''Write header'''
-    f.write(header_string.format(int(i + 1), ", ".join(col_list), str(cr)))
-    '''Report cross-validation results'''
-    f.write(section_sep + "Cross-validation metrics\n")
-    for model_i in col_list:
-        f.write(model_i + "\n")
-        tmp_dict = report_vals[model_i]
-        for k in tmp_dict.keys():
-            f.write(k + ": " + str(tmp_dict[k]) + "\n")
-        f.write("\n")
-    '''Report final model metrics'''
-    f.write(section_sep + "Production-level model goodness of fit\n")
-    for model_i in col_list:
-        f.write(model_i + "\n")
-        tmp_dict = report_vals_production_lvl_model[model_i]
-        for k in tmp_dict.keys():
-            f.write(k + ": " + str(tmp_dict[k]) + "\n")
-        f.write("\n")
+            plt.show()
+    
+    if cr:
+        plt.figure(figsize = (8, 4.5))
+        X.remove_continuum()
+        with plt.style.context("ggplot"):
+            plt.plot(wl, X.values)
+            plt.xlabel("Wavelengths (nm)")
+            plt.ylabel("Hull Quotient [0, 1]")
+        if save_fig:
+            outfile = os.path.join(out, "Spectrum_CR.pdf")
+            plt.savefig(outfile)
+            plt.close()
+        else:
+            plt.show()
+    
+    #-------------------------------------------------------------------------|
+    # Loop through y variables
+    report_vals = dict()
+    report_vals_production_lvl_model = dict()
+        
+    for i, column in enumerate(col_list):
+        out_folder = os.path.join(out, column)
+        os.makedirs(out_folder, exist_ok = True)
+        
+        ##--------------------------------------------------------------------|
+        ## Read y data
+        y = y_df[column].values.squeeze()[order]
+        ## Mean y value for calculation of the relative Root Mean Squared Error
+        y_mean = np.mean(y)
+        y_min = np.min(y)
+        y_max = np.max(y)
+        
+        ##--------------------------------------------------------------------|
+        ## Test with varying number of components
+        cv_scores = {}
+        for key in metrics:
+            cv_scores[key] = []
+        
+        try_latent_vars = np.arange(1, mlv + 1)
+        
+        for n_comp in try_latent_vars:
+            scores = cross_validate_plsr(X_vals = X.arrayT,
+                                         y_vals = y,
+                                         n_comp = n_comp,
+                                         crossval = cv,
+                                         mcreps = mcr)
+            for key in scores:
+                cv_scores[key].append(scores[key])
+        
+        fig_dir = None if save_fig == False else os.path.join(out_folder)
+        for key in cv_scores:
+            obj = "max" if key == "r2" else "min"
+            plot_metrics(cv_scores[key], key, obj, try_latent_vars, fig_dir)
+        
+        ## Find metric optimum
+        index_max_r2s = np.argmax(cv_scores["r2"])
+        index_min_mse = np.argmin(cv_scores["MSE"])
+        index_min_rmse = np.argmin(cv_scores["RMSE"])
+        index_min_rrmse = np.argmin(cv_scores["relRMSE"])
+        
+        ## Get optimum number of latent variables
+        index_best = index_min_rrmse
+        nlv = try_latent_vars[index_best]
+        
+        ##--------------------------------------------------------------------|
+        ## Get best cross-validation scores
+        best_scores = dict()
+        for key in cv_scores:
+            best_scores[key] = cv_scores[key][index_best]
+        
+        ## Prepare cross-validation scores for best model for report
+        report_vals[column] = best_scores
+        
+        ##--------------------------------------------------------------------|
+        ## Fit model with optimum number of latent variables and  all data
+        ## points
+        ## = "production-level" model
+        model = PLSRegression(n_components = nlv)
+        model.fit(X.arrayT, y)
+        
+        XL, yl, XS, YS, beta = model.x_scores_, model.y_scores_, \
+            model.x_loadings_, model.y_loadings_, model.coef_
+        PCTVAR = model.score(X.arrayT, y)
+        
+        ## Export model
+        model_dir = os.path.join(out_folder, column + "_fit.pkl")
+        pk.dump(model, open(model_dir, "wb"))
+        
+        ## Predict y using final model
+        y_pred = model.predict(X.arrayT)
+        
+        ## Prepare goodness-of-fit metrics of production-lvl model for export
+        production_lvl_scores = dict()
+        production_lvl_scores["Latent variables"] = nlv
+        for key in metrics:
+            metric = metrics[key]
+            production_lvl_scores[key] = metric(y, y_pred)
+        
+        report_vals_production_lvl_model[column] = production_lvl_scores
+        
+        ##--------------------------------------------------------------------|
+        ## Plot final model true vs prediction scatter plot
+        plt.figure(figsize = (6, 6))
+        with plt.style.context("ggplot"):
+            plt.scatter(y, y_pred, color = "red")
+            plt.plot(y, y, "-g")
+            plt.plot(y, y, "-g", label = "Expected regression line")
+            z = np.polyfit(y, y_pred, 1)
+            plt.plot(np.polyval(z, y), y, color = "blue",
+                     label = "Predicted regression line")
+            plt.xlabel("Actual")
+            plt.ylabel("Predicted")
+            plt.legend()
+            if save_fig:
+                outfile = os.path.join(out_folder, "Scatter_" + column +
+                                       ".pdf")
+                plt.savefig(outfile)
+                plt.close()
+            else:
+                plt.plot()
+        
+        del model, scores, cv_scores
+        print(i)
+    
+    #-------------------------------------------------------------------------|
+    # Write report
+    header_string = "PLS Regression Report for {0} variables\nVariables: " + \
+        "{1}\nContinuum removal: {2}\n\n"
+    section_sep = "-" * 80 + "\n"
+    
+    report_file = os.path.join(out, "Report.txt")
+    with open(report_file, "w") as f:
+        '''Write header'''
+        f.write(header_string.format(int(i + 1), ", ".join(col_list), str(cr)))
+        '''Report cross-validation results'''
+        f.write(section_sep + "Cross-validation metrics\n")
+        for model_i in col_list:
+            f.write(model_i + "\n")
+            tmp_dict = report_vals[model_i]
+            for k in tmp_dict.keys():
+                f.write(k + ": " + str(tmp_dict[k]) + "\n")
+            f.write("\n")
+        '''Report final model metrics'''
+        f.write(section_sep + "Production-level model goodness of fit\n")
+        for model_i in col_list:
+            f.write(model_i + "\n")
+            tmp_dict = report_vals_production_lvl_model[model_i]
+            for k in tmp_dict.keys():
+                f.write(k + ": " + str(tmp_dict[k]) + "\n")
+            f.write("\n")
