@@ -186,7 +186,8 @@ def cross_validate_plsr(X_vals, y_vals, n_comp, crossval, mcreps,
     print("Number of latent variables is {0}.".format(n_comp))
     n_samples = len(y_vals)
     samples = np.array(list(range(n_samples)))
-    test_size = int(n_samples / crossval)
+    test_size = int(n_samples / crossval) if crossval > 1. else int(
+        n_samples * crossval)
     train_size = n_samples - test_size
     print("Train size: {0}, test size {1}.".format(train_size, test_size))
     
