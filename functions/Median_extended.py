@@ -89,6 +89,49 @@ def _drop_outer(a, n = 2, fix_dtype = True):
     out = np.mean(c).astype(a.dtype) if fix_dtype else np.mean(c)
     return out
 
+def _z_base(x, ax):
+    '''
+    Calculate z-scores for rows or columns of an array.
+    
+    Parameters
+    ----------
+    x : numpy.array
+        Input values as numpy.array.
+    ax : int {0, 1}
+        Axis along which the z-scores are to be calculated.
+
+    Returns
+    -------
+    numpy.array with one fewer dimension than the input array.
+        Z-scores.
+    '''
+    m = np.apply_along_axis(np.mean, axis = ax, arr = x)
+    s = np.apply_along_axis(np.std, axis = ax, arr = x)
+    return (x - m) / s
+
+def _compare(x, z, use_mean):
+    '''
+    Check whether the absolute of values of an array are below a threshold.
+    
+    Parameters
+    ----------
+    x : numpy.array
+        Input array.
+    z : float
+        Threshold value.
+    use_mean : bool
+        If True, the function checks whether the average of the absolutes
+        is below the threshold z, else it checks whether all absolutes are
+        below the threshold.
+    
+    Returns
+    -------
+    out : bool
+        Truth value for the selected condidion.
+    '''
+    out = np.mean(np.abs(x)) < z if use_mean else np.all(np.abs(x) < z)
+    return out
+
 #------------------------------------------------------------------------------
 # Wrapper functions to make calculations applicable along certain axis of
 # numpy.array
@@ -163,4 +206,51 @@ def drop_outer(a, n = 2, axis = None, fix_dtype = True):
     out = _drop_outer(a, n, fix_dtype) if axis is None else \
         np.apply_along_axis(_drop_outer, axis = axis, arr = a, n = n,
                             fix_dtype = fix_dtype)
+    return out
+
+def z_score(a, z = 3., axis = 0, fix_dtype = True, remove_by_mean = False):
+    '''
+    Delete outliers based on z-score.
+
+    Parameters
+    ----------
+    a : numpy.array
+        Array of input values.
+    z : float, optional
+        Z-score to set as boundary. The default is 3.
+    axis : bool, optional
+        Select axis along which the _midvals function is to be applied. If
+        no axis is selected, the function is applied to all values of the
+        input array. In this case, the output is a single value. The default
+        is None.
+    fix_dtype : bool, optional
+        Keep input dtype. The default is True.
+
+    Returns
+    -------
+    out : a.dtype
+        Output value.
+    
+    Returns
+    -------
+    out : ndarray or scalar
+        Output array. Either a scalar (in case no axis is selected), or an
+        array with a similar shape as the input array, except along the 'axis'
+        dimension. In case 'out' is an array, it has one fewer dimension than
+        the input array.
+    '''
+    a = a.astype("float")
+    b = a.copy()
+    
+    len_0 = a.shape[1] if axis == 0 else a.shape[0]
+    for v in range(len_0):
+        zs = _z_base(a[:,v], axis) if axis == 0 else _z_base(a[v,:], axis)
+        b[:,v] = zs
+    
+    ax = 0 if axis == 1 else 1
+    indices = np.apply_along_axis(_compare, axis = ax, arr = b, z = z,
+                                  use_mean = remove_by_mean)
+    c = a[:,indices] if ax == 0 else a[indices,:]
+    mean_c = np.apply_along_axis(np.mean, axis = axis, arr = c)
+    out = mean_c.astype(a.dtype) if fix_dtype else mean_c
     return out
