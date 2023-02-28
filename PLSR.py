@@ -4,9 +4,9 @@
 Created on Sat Jan 28 18:54:39 2023
 
 @author: Manuel
-# Modified from sources:
-https://www.kaggle.com/code/phamvanvung/partial-least-squares-regression-in-python
-https://stackoverflow.com/a/73405250/11611246
+
+This script implements the PLS Regression as commandline callable Python code.
+Based on scikit-learn, the implemented algorithm is NIPALS.
 """
 __version__ = "1.0.1"
 __maintainer__ = "Manuel R. Popp"
@@ -511,6 +511,10 @@ if __name__ == "__main__":
     
     order = [i for i, item in enumerate(y_ids) if str(item) in x_ids]
     
+    ## Export a new y df to tmp if y needs to be re-ordered
+    if order != list(range(len(y_ids))):
+        y_df.reindex(order)
+    
     #-------------------------------------------------------------------------|
     # Plot data
     plt.figure(figsize = (8, 4.5))
@@ -613,6 +617,14 @@ if __name__ == "__main__":
         model_dir = os.path.join(out_folder, column + "_fit.pkl")
         pk.dump(model, open(model_dir, "wb"))
         
+        ## Export beta scores
+        coefs_dir = os.path.join(out_folder, column + "_coefs.pkl")
+        coef_dict = {"x_mean" : model._x_mean,
+             "x_std" : model._x_std,
+             "y_mean" : model._y_mean,
+             "coefs" : model.coef_}
+        pk.dump(coef_dict, open(coefs_dir, "wb"))
+        
         ## Predict y using final model
         y_pred = model.predict(X.arrayT)
         
@@ -675,3 +687,34 @@ if __name__ == "__main__":
             for k in tmp_dict.keys():
                 f.write(k + ": " + str(tmp_dict[k]) + "\n")
             f.write("\n")
+#-----------------------------------------------------------------------------|
+# Predict using only the exported coefs dictionary:
+'''
+def predict_Python_PLS(X, coefs):
+    """Predict targets of given samples.
+
+    Parameters
+    ----------
+    X : array-like of shape (n_samples, n_features)
+        Samples.
+
+    copy : bool, default=True
+        Whether to copy `X` and `Y`, or perform in-place normalization.
+
+    Returns
+    -------
+    y_pred : ndarray of shape (n_samples,) or (n_samples, n_targets)
+        Returns predicted values.
+
+    Notes
+    -----
+    This call requires the estimation of a matrix of shape
+    `(n_features, n_targets)`, which may be an issue in high dimensional
+    space.
+    """
+    # Normalize
+    X -= coefs["x_mean"]
+    X /= coefs["x_std"]
+    Ypred = np.dot(X, coefs["coefs"])
+    return Ypred + coefs["y_mean"]
+'''
