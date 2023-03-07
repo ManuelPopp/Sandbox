@@ -663,8 +663,10 @@ if __name__ == "__main__":
     
     #-------------------------------------------------------------------------|
     # Write report
-    header_string = "PLS Regression Report for {0} variables\nVariables: " + \
-        "{1}\nContinuum removal: {2}\n\n"
+    header_string = "# NIPALS algorithm PLS regression"
+    header_string = f"{header_string:-<80}" + "\n"
+    header_string += "Regression report for {0} variables\nVariable names" + \
+        ": {1}\nContinuum removal: {2}\n\n"
     section_sep = "-" * 80 + "\n"
     
     report_file = os.path.join(out, "Report.txt")
