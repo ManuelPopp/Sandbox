@@ -16,7 +16,7 @@ import <- function(...) {
   
   for (package in packages) {
     if (!require(package, character.only = TRUE)) {
-      do.call(install.packages, package, kwargs)
+      do.call(install.packages, c(list(package), kwargs))
     }
     require(package, character.only = TRUE)
   }
