@@ -1,7 +1,8 @@
 import <- function(...) {
   #' Import R packages. Install them if necessary.
   #' 
-  #' @param ... any argument that can be passed to install.packages.
+  #' @param ... any argument that can be passed to install.packages. Provide
+  #' package names as character strings.
   #' @details The function installs only packages that are missing. Packages
   #' are loaded.
   #' @examples
