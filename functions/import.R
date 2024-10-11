@@ -12,13 +12,25 @@ import <- function(...) {
   #' @seealso \code{\link[base]{install.packages}}
   #' @export
   args <- list(...)
-  packages = args[names(args) == ""]
-  kwargs = args[names(args) != ""]
+  arg_names <- names(args)
   
-  for (package in packages) {
-    if (!require(package, character.only = TRUE)) {
+  packages = if (is.null(arg_names)) {
+    args
+  } else {
+    args[arg_names == "" | is.null(arg_names)]
+  }
+  
+  kwargs = if (is.null(arg_names)) {
+    list()
+  } else {
+    args[!is.null(arg_names) & arg_names != ""]
+  }
+  
+  load <- function(package) {
+    if (!requireNamespace(package, quietly = TRUE)) {
       do.call(install.packages, c(list(package), kwargs))
     }
-    require(package, character.only = TRUE)
+    base::library(package, character.only = TRUE, pos = .GlobalEnv)
   }
+  invisible(lapply(packages, load))
 }
