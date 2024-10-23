@@ -1,6 +1,6 @@
 require("dplyr")
 
-mode <- function(..., ties = "first", digits = 0) {
+mode <- function(..., ties = "first", digits = NA) {
   #' Get the mode value from a vector
   #' 
   #' Count the occurrences of values within a vector and return the most
@@ -10,7 +10,8 @@ mode <- function(..., ties = "first", digits = 0) {
   #' @param ties Either 'first' to return the first value encountered in case
   #' of ties, or 'all', to return a vector of all most frequent values, instead.
   #' @param digits An integer. Number of digits to round floating point numbers
-  #' to, before searching the mode value.
+  #' to, before searching the mode value. Only used if set to a numeric value.
+  #' The default is NA.
   #' 
   #' @examples
   #' mode(1, 2, "a", 2, "c", ties = "all")
@@ -47,7 +48,7 @@ mode <- function(..., ties = "first", digits = 0) {
   }
   
   # Round floating point values
-  if (is.numeric(values)) {
+  if (is.numeric(values) & is.numeric(digits)) {
     values <- round(values, digits)
   }
   
