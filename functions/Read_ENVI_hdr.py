@@ -1,3 +1,8 @@
+'''Read header of an ENVI file.
+
+The EnviHDR class attempts to read in the tags from the header of an ENVI file
+and store the values in a dictionary.
+'''
 import re
 class EnviHDR:
     def __init__(self, path):
